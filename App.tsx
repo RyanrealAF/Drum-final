@@ -211,6 +211,7 @@ export default function App() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [playbackTime, setPlaybackTime] = useState(0);
   const [logs, setLogs] = useState<string[]>(['> CORE ENGINE INITIALIZED', '> WAITING FOR TRANSIENT INPUT']);
+  const [isRecording, setIsRecording] = useState(false);
 
   // UI State for knobs/faders
   const [levels, setLevels] = useState({ kick: 0.8, snare: 0.7, hats: 0.5, master: 0.8 });
@@ -227,6 +228,8 @@ export default function App() {
   const startTimeRef = useRef<number>(0);
   const requestRef = useRef<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   const addLog = (msg: string) => setLogs(p => [...p.slice(-4), `> ${msg}`]);
 
@@ -306,6 +309,48 @@ export default function App() {
     }
   };
 
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        await initAudio(arrayBuffer);
+        setFileName("MIC_CAPTURE.WAV");
+        setStage(PipelineStage.IDLE);
+        addLog("MIC CAPTURE STABILIZED.");
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setStage(PipelineStage.RECORDING);
+      addLog("RECORDING SIGNAL...");
+    } catch (err) {
+      console.error("Error accessing microphone:", err);
+      setError("Microphone access denied.");
+      addLog("ERROR: MIC ACCESS DENIED.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      addLog("RECORDING STOPPED.");
+    }
+  };
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -372,7 +417,7 @@ export default function App() {
       addLog("ERROR: NO MIDI DATA.");
       return;
     }
-    const midiBytes = buildMidiFile(transcription.notes, transcription.bpm);
+    const midiBytes = buildMidiFile(transcription.notes, transcription.bpm, humanizationActive);
     const blob = new Blob([midiBytes], { type: 'audio/midi' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -412,12 +457,21 @@ export default function App() {
                <span className="text-[8px] font-black text-zinc-600 uppercase">Input Clock</span>
                <span className="text-[10px] text-cyan-500 font-mono tracking-tighter italic">{transcription?.bpm || '--'} BPM</span>
              </div>
-             <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="px-6 py-2 bg-zinc-900 border border-zinc-700 rounded text-[10px] font-black tracking-[0.3em] text-cyan-500 shadow-xl active:translate-y-1 transition-all hover:bg-zinc-800"
-             >
-               UPLOAD SIGNAL
-             </button>
+             <div className="flex gap-2">
+               <button 
+                  onClick={isRecording ? stopRecording : startRecording}
+                  className={`w-10 h-10 rounded-full border border-black shadow-xl flex items-center justify-center transition-all ${isRecording ? 'bg-red-600 animate-pulse' : 'bg-zinc-800 hover:bg-zinc-700'}`}
+                  title={isRecording ? "Stop Recording" : "Record from Mic"}
+               >
+                 <Mic2 size={16} className={isRecording ? 'text-white' : 'text-cyan-500'} />
+               </button>
+               <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-6 py-2 bg-zinc-900 border border-zinc-700 rounded text-[10px] font-black tracking-[0.3em] text-cyan-500 shadow-xl active:translate-y-1 transition-all hover:bg-zinc-800"
+               >
+                 UPLOAD SIGNAL
+               </button>
+             </div>
              <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept="audio/*" />
           </div>
         </div>
@@ -498,7 +552,13 @@ export default function App() {
                  <Waves size={10} className="text-cyan-500" />
                  <span className="text-[8px] font-mono text-zinc-700 tracking-[0.2em] uppercase">IMPACT_OSCILLOSCOPE_V2</span>
                </div>
-               <ImpactOscilloscope active={isPlaying} color="#06b6d4" analyser={analyserRef.current} />
+               {isRecording && (
+                 <div className="absolute top-2 right-2 flex items-center gap-2 z-20">
+                   <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                   <span className="text-[8px] font-mono text-red-500 tracking-[0.2em] uppercase">RECORDING_SIGNAL</span>
+                 </div>
+               )}
+               <ImpactOscilloscope active={isPlaying || isRecording} color="#06b6d4" analyser={analyserRef.current} />
              </div>
 
              {/* RENDER CONTROLS */}

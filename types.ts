@@ -16,6 +16,7 @@ export interface TranscriptionResponse {
 export enum PipelineStage {
   IDLE = 'IDLE',
   UPLOADING = 'UPLOADING',
+  RECORDING = 'RECORDING',
   ANALYZING = 'ANALYZING',
   CONVERTING = 'CONVERTING',
   COMPLETE = 'COMPLETE',

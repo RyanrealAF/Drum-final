@@ -5,7 +5,7 @@ import { MidiNote } from '../types';
  * A minimal MIDI File builder
  * Generates a Standard MIDI File (SMF) Type 0
  */
-export const buildMidiFile = (notes: MidiNote[], bpm: number = 120): Uint8Array => {
+export const buildMidiFile = (notes: MidiNote[], bpm: number = 120, humanize: boolean = false): Uint8Array => {
   const ticksPerBeat = 480;
   const tempo = Math.round(60000000 / bpm); // microseconds per beat
 
@@ -26,8 +26,15 @@ export const buildMidiFile = (notes: MidiNote[], bpm: number = 120): Uint8Array 
   // Convert notes to sorted events (time, type, pitch, velocity)
   const events: { time: number; type: 'on' | 'off'; pitch: number; velocity: number }[] = [];
   notes.forEach(n => {
-    events.push({ time: n.startTime, type: 'on', pitch: n.pitch, velocity: n.velocity });
-    events.push({ time: n.startTime + n.duration, type: 'off', pitch: n.pitch, velocity: 0 });
+    // Apply humanization if active
+    const timeOffset = humanize ? (Math.random() - 0.5) * 0.02 : 0; // +/- 10ms
+    const velocityOffset = humanize ? Math.floor((Math.random() - 0.5) * 10) : 0; // +/- 5 velocity
+    
+    const startTime = Math.max(0, n.startTime + timeOffset);
+    const velocity = Math.max(1, Math.min(127, n.velocity + velocityOffset));
+
+    events.push({ time: startTime, type: 'on', pitch: n.pitch, velocity: velocity });
+    events.push({ time: startTime + n.duration, type: 'off', pitch: n.pitch, velocity: 0 });
   });
 
   events.sort((a, b) => a.time - b.time);
